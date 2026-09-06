@@ -104,7 +104,7 @@ void func(int sockfd)
                 fprintf(fs, "1");
                 if (state){
                         fprintf(fp, "1");
-                        usleep(11000000);//Time between signal
+                        usleep(5000000);//Time between signal
               }else{
                         fprintf(fp, "0");
                         //Trigger camera here
