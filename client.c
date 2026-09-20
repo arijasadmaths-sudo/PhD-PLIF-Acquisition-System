@@ -111,7 +111,7 @@ void func(int sockfd)
                         char buff[MAX];
                         int n;
                         bzero(buff, 4);
-                     //   printf("Laser trigger time ");
+                     //   printf("Laser modulation time ");
                         char buff1[] = "store";
                         n = 0;
 //                      while ((buff[n++] = getchar()) != '\n');
