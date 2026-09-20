@@ -107,12 +107,12 @@ void func(int sockfd)
                         usleep(5000000);//Time between signal
               }else{
                         fprintf(fp, "0");
-                        //Trigger camera here
+                        //Request storage of the latest completed camera frame
                         char buff[MAX];
                         int n;
                         bzero(buff, 4);
                      //   printf("Laser trigger time ");
-                        char buff1[4] = {'T','r','i','g'};
+                        char buff1[] = "store";
                         n = 0;
 //                      while ((buff[n++] = getchar()) != '\n');
                         write(sockfd, buff1, sizeof(buff1));
