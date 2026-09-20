@@ -33,7 +33,7 @@ void func(int connfd)
 //		write(connfd, buff, sizeof(buff)); 
 		// if msg contains "Exit" then server exit and chat ended. 
 //		if (strncmp("exit", buff, 4) == 0) { 
-		printf("Trigger camera\n"); 
+		printf("Store frame request received\n"); 
 		//main1()
 			break; 
 //		} 
