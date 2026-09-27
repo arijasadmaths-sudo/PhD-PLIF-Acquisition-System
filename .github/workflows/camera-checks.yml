@@ -1,0 +1,16 @@
+name: Camera receiver checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  software-checks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Compile and exercise the simulated receiver
+        run: python3 tests/test_camera.py

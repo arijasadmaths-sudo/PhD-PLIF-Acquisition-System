@@ -1,0 +1,7 @@
+/build/
+/images/
+__pycache__/
+*.pyc
+*.o
+*.tif
+*.tiff
