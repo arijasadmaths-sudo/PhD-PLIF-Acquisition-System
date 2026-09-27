@@ -1,0 +1,109 @@
+name: Publish thesis-code snapshot
+
+on:
+  push:
+    branches: ['release/thesis-code-2026-09-27']
+    paths: ['.github/workflows/publish-thesis-snapshot.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-thesis-code-2026-09-27
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Create and verify the pinned tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_COMMIT: d9da2ef52887f6dce8b95f780d49ab3349bdc341
+          RELEASE_TAG: thesis-code-2026-09-27
+          RELEASE_TITLE: 'PLIF Acquisition System: Thesis Code'
+          RELEASE_DESCRIPTION: >-
+            Updated PC-side camera receiver, SDK build helper, network request tool
+            and retained BeagleBone control code. Setup and use are described in
+            README.md. The Teledyne SDK is an external dependency. The receiver
+            checks use a simulated SDK; a build with the installed vendor SDK and
+            a real-camera test are still required on the acquisition computer.
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          repo = os.environ['REPOSITORY']
+          target = os.environ['TARGET_COMMIT']
+          tag = os.environ['RELEASE_TAG']
+          title = os.environ['RELEASE_TITLE']
+          description = os.environ['RELEASE_DESCRIPTION']
+          base = 'https://api.github.com/repos/' + repo
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Content-Type': 'application/json',
+          }
+
+          def api(method, path, payload=None, missing=False):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              request = Request(base + path, data=data, headers=headers, method=method)
+              try:
+                  with urlopen(request, timeout=45) as response:
+                      return json.load(response)
+              except HTTPError as error:
+                  if missing and error.code == 404:
+                      return None
+                  raise RuntimeError(f'{method} {path}: HTTP {error.code}') from None
+
+          def target_of(reference):
+              obj = reference['object']
+              for _ in range(5):
+                  if obj['type'] == 'commit':
+                      return obj['sha']
+                  if obj['type'] != 'tag':
+                      break
+                  obj = api('GET', '/git/tags/' + obj['sha'])['object']
+              raise RuntimeError('Tag does not resolve to a commit')
+
+          if target_of(api('GET', '/git/ref/heads/main')) != target:
+              raise RuntimeError('main changed since review; publication stopped')
+          api('GET', '/git/commits/' + target)
+          reference = api('GET', '/git/ref/tags/' + tag, missing=True)
+          if reference is None:
+              annotation = api('POST', '/git/tags', {
+                  'tag': tag, 'message': title + '\n\nCommit: ' + target,
+                  'object': target, 'type': 'commit',
+              })
+              reference = api('POST', '/git/refs', {
+                  'ref': 'refs/tags/' + tag, 'sha': annotation['sha'],
+              })
+          if target_of(reference) != target:
+              raise RuntimeError('Existing tag points elsewhere; it was not changed')
+
+          body = ('Thesis supporting-code snapshot, 27 September 2026.\n\n'
+                  + description + '\n\nCommit: `' + target + '`.\n\n'
+                  'Cite this release or the full commit rather than the moving main branch. '
+                  'Later changes should use a new version.')
+          release = api('GET', '/releases/tags/' + tag, missing=True)
+          if release is None:
+              release = api('POST', '/releases', {
+                  'tag_name': tag, 'target_commitish': target, 'name': title,
+                  'body': body, 'draft': False, 'prerelease': False,
+                  'make_latest': 'true',
+              })
+          if release['draft'] or release['prerelease'] or release['name'] != title:
+              raise RuntimeError('Existing release metadata does not match the requested snapshot')
+          if target_of(api('GET', '/git/ref/tags/' + tag)) != target:
+              raise RuntimeError('Published tag target verification failed')
+          if target_of(api('GET', '/git/ref/heads/main')) != target:
+              raise RuntimeError('main changed during publication')
+          print(json.dumps({'release': release['html_url'], 'name': release['name'],
+                            'tag': tag, 'commit': target, 'main_unchanged': True}, indent=2))
+          PY
