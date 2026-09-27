@@ -4,6 +4,7 @@ import csv
 import os
 from pathlib import Path
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -128,6 +129,8 @@ class CameraTests(unittest.TestCase):
                 image = manifest.parent / row['file']
                 self.assertTrue(image.exists())
                 self.assertGreater(int(row['received_frame_sequence']), 0)
+                payload = image.read_bytes().split(b'\n', 1)[1]
+                self.assertEqual(payload[0], int(row['received_frame_sequence']) % 200 + 1)
 
     def test_repeated_fragmented_and_coalesced_requests(self):
         receiver = self.start()
@@ -205,6 +208,12 @@ class CameraTests(unittest.TestCase):
                 self.assertEqual(receiver.files(), [])
                 receiver.stop()
 
+    def test_changed_geometry_is_rejected(self):
+        receiver = self.start(env={'MOCK_BAD_GEOMETRY':'1'}, ready=False)
+        self.assertNotEqual(receiver.process.wait(timeout=4), 0)
+        self.assertEqual(receiver.files(), [])
+        self.assertNotIn('ERROR_buffer_still_owned', receiver.sdk_log.read_text())
+
     def test_incomplete_frames_are_not_saved(self):
         receiver = self.start(env={'MOCK_INCOMPLETE':'1'}, ready=False)
         self.assertNotEqual(receiver.process.wait(timeout=8), 0)
@@ -239,14 +248,20 @@ class CameraTests(unittest.TestCase):
         include = shlex.quote(str(ROOT/'tests/sdk'))
         mock = shlex.quote(str(ROOT/'tests/mock_sdk.c'))
         (source/'Makefile').write_text('genicam_c_demo: genicam_c_demo.c\n\tgcc -std=c11 -pthread -DLIBTIFF_AVAILABLE -I'+include+' genicam_c_demo.c '+mock+' -o genicam_c_demo\n')
-        run = subprocess.run([sys.executable, str(ROOT/'build_camera.py'), '--sdk-example', str(source)],
+        # Exercise the build script in a temporary repository, never over a real camera binary.
+        test_repo = Path(self.temp.name)/'test_repository'
+        test_repo.mkdir()
+        for name in ('build_camera.py', 'server.c'):
+            shutil.copy2(ROOT/name, test_repo/name)
+        script = test_repo/'build_camera.py'
+        run = subprocess.run([sys.executable, str(script), '--sdk-example', str(source)],
                              capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 0, run.stdout+run.stderr)
         self.assertIn('Original vendor', (source/'genicam_c_demo.c').read_text())
-        run = subprocess.run([str(ROOT/'build/plif_camera'), '--help'], capture_output=True, text=True, timeout=3)
+        run = subprocess.run([str(test_repo/'build/plif_camera'), '--help'], capture_output=True, text=True, timeout=3)
         self.assertEqual(run.returncode, 0)
         self.assertIn('--camera-ip', run.stdout)
-        second = subprocess.run([sys.executable, str(ROOT/'build_camera.py'), '--sdk-example', str(source)],
+        second = subprocess.run([sys.executable, str(script), '--sdk-example', str(source)],
                                 capture_output=True, text=True, timeout=3)
         self.assertNotEqual(second.returncode, 0, 'Existing SDK work directory was overwritten')
 
